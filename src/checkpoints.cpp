@@ -11,7 +11,8 @@
 
 #include <stdint.h>
 
-#include <boost/foreach.hpp>
+#include <boost/range/adaptor/reversed.hpp>
+using boost::adaptors::reverse;
 
 namespace Checkpoints {
 
@@ -69,7 +70,7 @@ namespace Checkpoints {
     {
         const MapCheckpoints& checkpoints = data.mapCheckpoints;
 
-        BOOST_REVERSE_FOREACH(const MapCheckpoints::value_type& i, checkpoints)
+        for (const auto& i : reverse(checkpoints))
         {
             const uint256& hash = i.second;
             BlockMap::const_iterator t = mapBlockIndex.find(hash);
