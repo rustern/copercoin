@@ -13,6 +13,7 @@
 #include "rpc/protocol.h"
 #include "util.h"
 #include "utilstrencodings.h"
+#include "utilraii.h"
 
 #include <boost/filesystem/operations.hpp>
 #include <stdio.h>
@@ -184,18 +185,18 @@ UniValue CallRPC(const string& strMethod, const UniValue& params)
     int port = GetArg("-rpcport", BaseParams().RPCPort());
 
     // Create event base
-    struct event_base *base = event_base_new(); // TODO RAII
+    auto base = make_resource(event_base_new(), event_base_free);
     if (!base)
         throw runtime_error("cannot create event_base");
 
     // Synchronously look up hostname
-    struct evhttp_connection *evcon = evhttp_connection_base_new(base, NULL, host.c_str(), port); // TODO RAII
+    auto evcon = make_resource(evhttp_connection_base_new(base, NULL, host.c_str(), port), evhttp_connection_free);
     if (evcon == NULL)
         throw runtime_error("create connection failed");
     evhttp_connection_set_timeout(evcon, GetArg("-rpcclienttimeout", DEFAULT_HTTP_CLIENT_TIMEOUT));
 
     HTTPReply response;
-    struct evhttp_request *req = evhttp_request_new(http_request_done, (void*)&response); // TODO RAII
+    auto req = make_resource(evhttp_request_new(http_request_done, (void*)&response), evhttp_request_free);
     if (req == NULL)
         throw runtime_error("create http request failed");
 #if LIBEVENT_VERSION_NUMBER >= 0x02010300
@@ -228,16 +229,12 @@ UniValue CallRPC(const string& strMethod, const UniValue& params)
     assert(output_buffer);
     evbuffer_add(output_buffer, strRequest.data(), strRequest.size());
 
-    int r = evhttp_make_request(evcon, req, EVHTTP_REQ_POST, "/");
+    int r = evhttp_make_request(evcon, req.release(), EVHTTP_REQ_POST, "/");
     if (r != 0) {
-        evhttp_connection_free(evcon);
-        event_base_free(base);
         throw CConnectionFailed("send http request failed");
     }
 
     event_base_dispatch(base);
-    evhttp_connection_free(evcon);
-    event_base_free(base);
 
     if (response.status == 0)
         throw CConnectionFailed(strprintf("couldn't connect to server (%d %s)", response.error, http_errorstring(response.error)));
